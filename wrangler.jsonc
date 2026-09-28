@@ -1,0 +1,20 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "pixelb8-clan-feed",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-28",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CLAN_FEED_ROOM",
+        "class_name": "ClanFeedRoom"
+      }
+    ]
+  },
+  "exports": {
+    "ClanFeedRoom": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    }
+  }
+}

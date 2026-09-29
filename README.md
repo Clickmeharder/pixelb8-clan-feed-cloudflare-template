@@ -58,3 +58,15 @@ npm run dev
 ```
 
 Then edit `.dev.vars` and replace the placeholder with a real clan key.
+
+
+## Clan Feed Viewer Access
+
+This template also uses `CLAN_VIEWER_KEY`, the Viewer Code generated in the PixelB8 Clan Owner Office.
+
+During Cloudflare deployment, enter both secrets when prompted:
+
+- `CLAN_FEED_KEY` — used by RuneLite to publish events.
+- `CLAN_VIEWER_KEY` — used by clan members to request temporary read-only viewer tokens.
+
+The website requests a short-lived token from `POST /viewer-token` with the Viewer Code, then connects to `wss://YOUR-WORKER/viewer?token=...`. Direct anonymous `/viewer` connections are rejected.

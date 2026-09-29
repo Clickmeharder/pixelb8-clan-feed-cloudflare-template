@@ -2,6 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 
 const MAX_MESSAGE_BYTES = 16 * 1024;
 const ALLOWED_EVENT_TYPES = new Set(["clan_chat", "clan_system", "test"]);
+const VIEWER_TOKEN_TTL_SECONDS = 10 * 60;
 
 function websocketResponse(client) {
   return new Response(null, {
@@ -10,14 +11,32 @@ function websocketResponse(client) {
   });
 }
 
-function jsonResponse(data, status = 200) {
+function jsonResponse(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data, null, 2), {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
       "cache-control": "no-store",
+      ...extraHeaders,
     },
   });
+}
+
+function corsHeaders(request) {
+  const origin = String(request.headers.get("Origin") || "").trim();
+  const allowed =
+    origin === "https://pixelb8.lol" ||
+    origin === "https://www.pixelb8.lol" ||
+    origin.startsWith("http://localhost:") ||
+    origin.startsWith("http://127.0.0.1:");
+
+  return {
+    "access-control-allow-origin": allowed ? origin : "https://pixelb8.lol",
+    "access-control-allow-methods": "POST, OPTIONS",
+    "access-control-allow-headers": "content-type",
+    "access-control-max-age": "86400",
+    vary: "Origin",
+  };
 }
 
 function getPublisherKey(request) {
@@ -41,6 +60,66 @@ function safeEqual(a, b) {
     diff |= left[i] ^ right[i];
   }
   return diff === 0;
+}
+
+function bytesToBase64Url(bytes) {
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+async function hmacSignature(secret, value) {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    encoder.encode(value)
+  );
+
+  return bytesToBase64Url(new Uint8Array(signature));
+}
+
+async function createViewerToken(viewerKey) {
+  const expiresAt = Math.floor(Date.now() / 1000) + VIEWER_TOKEN_TTL_SECONDS;
+  const payload = String(expiresAt);
+  const signature = await hmacSignature(viewerKey, payload);
+  return `${payload}.${signature}`;
+}
+
+async function verifyViewerToken(viewerKey, token) {
+  const parts = String(token || "").split(".");
+  if (parts.length !== 2) {
+    return false;
+  }
+
+  const [payload, suppliedSignature] = parts;
+  const expiresAt = Number(payload);
+
+  if (!Number.isFinite(expiresAt)) {
+    return false;
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  if (expiresAt <= now || expiresAt > now + VIEWER_TOKEN_TTL_SECONDS + 30) {
+    return false;
+  }
+
+  const expectedSignature = await hmacSignature(viewerKey, payload);
+  return safeEqual(expectedSignature, suppliedSignature);
 }
 
 export class ClanFeedRoom extends DurableObject {
@@ -186,16 +265,91 @@ export default {
         ok: true,
         service: "PixelB8 Clan Feed Relay",
         viewerUrl: `${wsBase}/viewer`,
+        viewerTokenUrl: `${url.origin}/viewer-token`,
         runeliteUrl: `${wsBase}/runelite`,
         persistence: "none",
       });
     }
 
-    if (url.pathname !== "/viewer" && url.pathname !== "/runelite") {
-      return jsonResponse({ ok: false, error: "not_found" }, 404);
+    if (url.pathname === "/viewer-token") {
+      const headers = corsHeaders(request);
+
+      if (request.method === "OPTIONS") {
+        return new Response(null, { status: 204, headers });
+      }
+
+      if (request.method !== "POST") {
+        return jsonResponse(
+          { ok: false, error: "method_not_allowed" },
+          405,
+          headers
+        );
+      }
+
+      const configuredViewerKey = String(env.CLAN_VIEWER_KEY || "").trim();
+      if (!configuredViewerKey) {
+        return jsonResponse(
+          { ok: false, error: "viewer_key_not_configured" },
+          503,
+          headers
+        );
+      }
+
+      let body;
+      try {
+        body = await request.json();
+      } catch (_) {
+        return jsonResponse(
+          { ok: false, error: "invalid_json" },
+          400,
+          headers
+        );
+      }
+
+      const suppliedViewerCode = String(body?.viewerCode || "").trim();
+      if (!suppliedViewerCode || !safeEqual(configuredViewerKey, suppliedViewerCode)) {
+        return jsonResponse(
+          { ok: false, error: "invalid_viewer_code" },
+          401,
+          headers
+        );
+      }
+
+      const token = await createViewerToken(configuredViewerKey);
+      return jsonResponse(
+        {
+          ok: true,
+          token,
+          expiresIn: VIEWER_TOKEN_TTL_SECONDS,
+        },
+        200,
+        headers
+      );
     }
 
-    const room = env.CLAN_FEED_ROOM.getByName("feed");
-    return room.fetch(request);
+    if (url.pathname === "/viewer") {
+      const configuredViewerKey = String(env.CLAN_VIEWER_KEY || "").trim();
+      if (!configuredViewerKey) {
+        return jsonResponse(
+          { ok: false, error: "viewer_key_not_configured" },
+          503
+        );
+      }
+
+      const token = String(url.searchParams.get("token") || "").trim();
+      if (!token || !(await verifyViewerToken(configuredViewerKey, token))) {
+        return jsonResponse({ ok: false, error: "invalid_viewer_token" }, 401);
+      }
+
+      const room = env.CLAN_FEED_ROOM.getByName("feed");
+      return room.fetch(request);
+    }
+
+    if (url.pathname === "/runelite") {
+      const room = env.CLAN_FEED_ROOM.getByName("feed");
+      return room.fetch(request);
+    }
+
+    return jsonResponse({ ok: false, error: "not_found" }, 404);
   },
 };

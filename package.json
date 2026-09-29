@@ -1,5 +1,5 @@
 {
-  "name": "pixelb8-clan-feed",
+  "name": "yourclanname-feed-cloudflare-setup",
   "version": "1.0.0",
   "private": true,
   "description": "Free self-hosted realtime clan-feed relay for PixelB8 OSRS Clans.",

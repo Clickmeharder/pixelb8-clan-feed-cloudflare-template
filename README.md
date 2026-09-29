@@ -10,22 +10,23 @@ Once this repository is public on GitHub, this button can be used by clan owners
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=REPLACE_WITH_PUBLIC_GITHUB_REPO_URL)
 
-During deployment Cloudflare requires two secrets:
+During deployment, set:
 
-- `CLAN_FEED_KEY` — one of the clan keys generated in your PixelB8 Clan Owner Office. RuneLite uses this to publish clan-feed events.
-- `CLAN_VIEWER_KEY` — the Clan Feed Viewer Code generated in the Owner Office. Clanmates use this for read-only access.
+- `CLAN_FEED_KEY` to one of the clan keys generated in your PixelB8 Clan Owner Office. RuneLite uses this to publish the feed.
+- `CLAN_VIEWER_KEY` to the Clan Feed Viewer Code generated in your PixelB8 Clan Owner Office. Clanmates use this for read-only access.
 
-Keep both values private. Do not commit them to GitHub.
+Keep both values private.
 
 ## After deployment
 
-Open the deployed Worker URL in a browser. It returns the endpoints used by PixelB8 and RuneLite:
+Open the deployed Worker URL in a browser. It returns the two URLs you need:
 
 - `viewerUrl` — save this in the PixelB8 Owner Office as the clan's **Shared Clan Feed WebSocket URL**.
-- `viewerTokenUrl` — PixelB8 uses this automatically to exchange a valid Viewer Code for a short-lived viewer token.
 - `runeliteUrl` — put this in RuneLite's **Clan Feed WebSocket URL** setting.
 
 RuneLite's **Clan Feed Key** must be the same key you entered as `CLAN_FEED_KEY` during deployment.
+
+The PixelB8 website asks clan members for the Viewer Code, exchanges it for a short-lived viewer token, then connects to the saved `viewerUrl`.
 
 Example:
 
@@ -33,16 +34,9 @@ Example:
 Website viewer URL:
 wss://your-worker.workers.dev/viewer
 
-Viewer token endpoint:
-https://your-worker.workers.dev/viewer-token
-
 RuneLite publisher URL:
 wss://your-worker.workers.dev/runelite
 ```
-
-The raw `/viewer` WebSocket URL is not enough to read the feed. PixelB8 first exchanges the clan's Viewer Code for a short-lived signed token, then connects to `/viewer?token=...`.
-
-Viewer tokens expire after 10 minutes. The website can request a new token whenever it reconnects.
 
 ## What it relays
 
@@ -60,7 +54,7 @@ This template does not write clan-feed messages to Durable Object storage. Messa
 
 The Durable Object uses Cloudflare's Hibernation WebSocket API so idle WebSocket rooms can sleep while connections remain open.
 
-The Viewer Code itself is never placed in the WebSocket URL. It is exchanged over HTTPS for a short-lived signed token. Regenerating the Viewer Code and updating `CLAN_VIEWER_KEY` invalidates previously issued tokens after their short expiry window.
+The saved viewer WebSocket URL alone is not enough to read the feed. A valid short-lived viewer token is required, and that token is issued only after the correct `CLAN_VIEWER_KEY` is supplied.
 
 ## Local development
 
@@ -70,4 +64,4 @@ cp .dev.vars.example .dev.vars
 npm run dev
 ```
 
-Then edit `.dev.vars` and add both a real clan publishing key and a real Viewer Code. Do not commit `.dev.vars`.
+Then edit `.dev.vars` and add a real clan key and Viewer Code.

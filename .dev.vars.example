@@ -1,7 +1,7 @@
 # Required deployment secret.
 # Paste one of the clan keys generated in the PixelB8 Clan Owner Office.
-CLAN_FEED_KEY=replace-with-your-pixelb8-clan-key
+CLAN_FEED_KEY=
 
 # Required viewer secret.
 # Paste the Clan Feed Viewer Code generated in the PixelB8 Clan Owner Office.
-CLAN_VIEWER_KEY=replace-with-your-pixelb8-viewer-code
+CLAN_VIEWER_KEY=

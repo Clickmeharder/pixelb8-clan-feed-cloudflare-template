@@ -1,8 +1,8 @@
 {
   "name": "yourclanname-feed-cloudflare-setup",
-  "version": "1.1.0",
+  "version": "1.0.0",
   "private": true,
-  "description": "Free self-hosted realtime clan-feed relay for PixelB8 OSRS Clans.",
+  "description": "self-hosted realtime clan-feed relay for PixelB8 OSRS Clans.",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy"
@@ -16,7 +16,7 @@
         "description": "Paste one of your PixelB8 clan keys here. RuneLite must use the same key when publishing the Clan Feed. Keep it private."
       },
       "CLAN_VIEWER_KEY": {
-        "description": "Paste the Clan Feed Viewer Code generated in your PixelB8 Clan Owner Office. Clanmates use this code for read-only feed access. Keep it private."
+        "description": "Paste the Clan Feed Viewer Code from your PixelB8 Clan Owner Office. Clanmates use this for read-only feed access. Keep it private."
       }
     }
   }

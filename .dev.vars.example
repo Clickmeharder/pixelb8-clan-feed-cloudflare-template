@@ -1,7 +1,9 @@
-# Required deployment secret.
-# Paste one of the clan keys generated in the PixelB8 Clan Owner Office.
+# Required publisher secret.
+# Use the Clan Feed Publisher Key generated in the PixelB8 Clan Owner Office
+# or Local Clan Owner Office. RuneLite must use the same value.
 CLAN_FEED_KEY=
 
 # Required viewer secret.
-# Paste the Clan Feed Viewer Code generated in the PixelB8 Clan Owner Office.
+# Use the Viewer Code generated in the PixelB8 Clan Owner Office
+# or Local Clan Owner Office.
 CLAN_VIEWER_KEY=

@@ -1,8 +1,8 @@
 # PixelB8 Clan Feed
 
-A tiny self-hosted realtime relay for the PixelB8 OSRS Clan Feed.
+A tiny self-hosted realtime relay for PixelB8-compatible OSRS clan feeds.
 
-Each deployment belongs to one clan and runs in that clan owner's own Cloudflare account. Clan chat is relayed live through WebSockets and is **not permanently stored**.
+Each deployment belongs to one clan and runs in that clan owner's own Cloudflare account. Clan feed events are relayed live through WebSockets and are **not permanently stored**. PixelB8 can use the feed, but the relay is not restricted to PixelB8: the clan owner can also connect from their own website, overlay, or the included standalone viewer.
 
 ## Deploy
 
@@ -10,32 +10,50 @@ Clan owners can deploy this template to their own Cloudflare account:
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Clickmeharder/pixelb8-clan-feed-cloudflare-template)
 
-During deployment, Cloudflare will ask for `CLAN_FEED_KEY`.
+During deployment, Cloudflare asks for two secrets:
 
-Paste one of the clan keys generated in your PixelB8 Clan Owner Office. Keep this value private. RuneLite must use the same key when publishing the Clan Feed.
+- `CLAN_FEED_KEY` — the Publisher Key used by RuneLite to publish feed events.
+- `CLAN_VIEWER_KEY` — the Viewer Code used to obtain short-lived read-only viewer tokens.
+
+These values can come from either a registered PixelB8 Clan Owner Office or a Local Clan Owner Office. Keep both private.
 
 ## After deployment
 
-Open the deployed Worker URL in a browser. It returns the two URLs you need:
+Open the deployed Worker URL in a browser. It returns the endpoints for that deployment:
 
-- `viewerUrl` — save this in the PixelB8 Owner Office as the clan's **Shared Clan Feed WebSocket URL**.
-- `runeliteUrl` — put this in RuneLite's **Clan Feed WebSocket URL** setting.
+- `viewerUrl` — `wss://.../viewer`
+- `viewerTokenUrl` — `https://.../viewer-token`
+- `runeliteUrl` — `wss://.../runelite`
 
-RuneLite's **Clan Feed Key** must be the same key you entered as `CLAN_FEED_KEY` during deployment.
+RuneLite uses `runeliteUrl` plus the same Publisher Key entered as `CLAN_FEED_KEY`.
 
-Example:
+A browser viewer submits the Viewer Code to `POST /viewer-token`. If it matches `CLAN_VIEWER_KEY`, the Worker returns a short-lived token. The viewer then connects to `viewerUrl?token=...`. Direct anonymous `/viewer` connections are rejected.
 
-```text
-Website viewer URL:
-wss://your-worker.workers.dev/viewer
+## Optional standalone viewer
 
-RuneLite publisher URL:
-wss://your-worker.workers.dev/runelite
-```
+This template includes a standalone read-only Clan Feed Viewer in `docs/index.html`. Hosting the viewer is optional. It connects directly to the clan owner's Cloudflare Worker and does not require PixelB8 or Firebase.
+
+To publish your own viewer with GitHub Pages:
+
+1. Open your GitHub repository.
+2. Go to **Settings → Pages**.
+3. Under **Build and deployment**, choose **Deploy from a branch**.
+4. Select the `main` branch.
+5. Select the `/docs` folder.
+6. Save the Pages settings.
+7. Open the GitHub Pages URL after the deployment finishes.
+
+Your viewer will normally be available at:
+
+`https://YOUR-GITHUB-USERNAME.github.io/YOUR-REPOSITORY-NAME/`
+
+Enter your Cloudflare Worker URL and Viewer Code, then press **Connect**.
+
+The Worker allows `/viewer-token` requests from any browser origin, but a valid Viewer Code is still required and `/viewer` still requires a short-lived signed token.
 
 ## What it relays
 
-The relay accepts authenticated RuneLite publisher connections and forwards these PixelB8 event types to connected website viewers:
+The relay accepts authenticated RuneLite publisher connections and forwards these event types to connected viewers:
 
 - `clan_chat`
 - `clan_system`
@@ -49,6 +67,8 @@ This template does not write clan-feed messages to Durable Object storage. Messa
 
 The Durable Object uses Cloudflare's Hibernation WebSocket API so idle WebSocket rooms can sleep while connections remain open.
 
+Cloudflare secrets are not revealable after they are stored. If an owner changes a Publisher Key or Viewer Code, use Cloudflare's **Rotate** action to replace the matching Worker secret.
+
 ## Local development
 
 ```bash
@@ -57,16 +77,4 @@ cp .dev.vars.example .dev.vars
 npm run dev
 ```
 
-Then edit `.dev.vars` and replace the placeholder with a real clan key.
-
-
-## Clan Feed Viewer Access
-
-This template also uses `CLAN_VIEWER_KEY`, the Viewer Code generated in the PixelB8 Clan Owner Office.
-
-During Cloudflare deployment, enter both secrets when prompted:
-
-- `CLAN_FEED_KEY` — used by RuneLite to publish events.
-- `CLAN_VIEWER_KEY` — used by clan members to request temporary read-only viewer tokens.
-
-The website requests a short-lived token from `POST /viewer-token` with the Viewer Code, then connects to `wss://YOUR-WORKER/viewer?token=...`. Direct anonymous `/viewer` connections are rejected.
+Then set both `CLAN_FEED_KEY` and `CLAN_VIEWER_KEY` in `.dev.vars`.

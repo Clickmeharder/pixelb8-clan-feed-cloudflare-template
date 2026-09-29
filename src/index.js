@@ -22,21 +22,12 @@ function jsonResponse(data, status = 200, extraHeaders = {}) {
   });
 }
 
-function corsHeaders(request) {
-  const origin = String(request.headers.get("Origin") || "").trim();
-  const allowed =
-    origin === "null" ||
-    origin === "https://pixelb8.lol" ||
-    origin === "https://www.pixelb8.lol" ||
-    origin.startsWith("http://localhost:") ||
-    origin.startsWith("http://127.0.0.1:");
-
+function corsHeaders() {
   return {
-    "access-control-allow-origin": allowed ? origin : "https://pixelb8.lol",
+    "access-control-allow-origin": "*",
     "access-control-allow-methods": "POST, OPTIONS",
     "access-control-allow-headers": "content-type",
     "access-control-max-age": "86400",
-    vary: "Origin",
   };
 }
 
@@ -273,7 +264,7 @@ export default {
     }
 
     if (url.pathname === "/viewer-token") {
-      const headers = corsHeaders(request);
+      const headers = corsHeaders();
 
       if (request.method === "OPTIONS") {
         return new Response(null, { status: 204, headers });

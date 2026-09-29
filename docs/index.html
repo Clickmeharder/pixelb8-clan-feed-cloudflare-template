@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Clan Feed Viewer</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0e1116;--panel:#171c24;--panel2:#11161d;--line:#2a3442;--text:#e7edf5;--muted:#92a0b3;--accent:#73b9ff;--ok:#70d49b;--bad:#ff7b88}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+    main{width:min(920px,calc(100% - 32px));margin:40px auto}
+    h1{margin:0 0 6px;font-size:24px}
+    p{color:var(--muted)}
+    .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;margin-top:18px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    label{display:grid;gap:6px;color:var(--muted)}
+    input{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:9px;color:var(--text);padding:10px 11px}
+    .actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
+    button{background:#263547;border:1px solid #3b5068;color:var(--text);border-radius:9px;padding:9px 13px;cursor:pointer}
+    button:hover{border-color:var(--accent)}
+    #status{color:var(--muted)}
+    #status.ok{color:var(--ok)}
+    #status.bad{color:var(--bad)}
+    #feed{min-height:300px;max-height:62vh;overflow:auto;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px}
+    .msg{border-bottom:1px solid #202a36;padding:8px 4px}
+    .msg:last-child{border-bottom:0}
+    .meta{color:var(--muted);font-size:12px;margin-bottom:3px}
+    .type{color:var(--accent)}
+    code{color:#c8ddf7}
+    .footer{font-size:12px;color:var(--muted);text-align:center;margin-top:18px}
+    @media(max-width:700px){.grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<main>
+  <h1>Clan Feed Viewer</h1>
+  <p>Standalone read-only viewer for a PixelB8-compatible Clan Feed Worker. This page talks directly to the clan owner's Cloudflare Worker; it does not use Firebase or PixelB8 hosting.</p>
+
+  <section class="panel">
+    <div class="grid">
+      <label>Worker URL
+        <input id="workerUrl" placeholder="https://your-clan-feed.workers.dev" autocomplete="off">
+      </label>
+      <label>Viewer Code
+        <input id="viewerCode" type="password" placeholder="viewer_..." autocomplete="off">
+      </label>
+    </div>
+    <div class="actions">
+      <button id="connectBtn" type="button">Connect</button>
+      <button id="disconnectBtn" type="button">Disconnect</button>
+      <button id="showBtn" type="button">Show Code</button>
+      <span id="status">Disconnected</span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div id="feed" aria-live="polite"></div>
+  </section>
+
+  <div class="footer">Standalone Clan Feed Viewer · compatible with the PixelB8 Clan Feed Cloudflare template</div>
+</main>
+<script>
+(() => {
+  const workerInput = document.getElementById('workerUrl');
+  const codeInput = document.getElementById('viewerCode');
+  const connectBtn = document.getElementById('connectBtn');
+  const disconnectBtn = document.getElementById('disconnectBtn');
+  const showBtn = document.getElementById('showBtn');
+  const statusEl = document.getElementById('status');
+  const feedEl = document.getElementById('feed');
+  let socket = null;
+  let attempt = 0;
+
+  const savedWorker = localStorage.getItem('pixelb8StandaloneWorkerUrl') || '';
+  workerInput.value = savedWorker;
+
+  function setStatus(text, kind = '') {
+    statusEl.textContent = text;
+    statusEl.className = kind;
+  }
+
+  function normalizeWorker(value) {
+    let raw = String(value || '').trim();
+    if (!raw) throw new Error('Enter the Worker URL.');
+    if (!/^https?:\/\//i.test(raw)) raw = `https://${raw}`;
+    const url = new URL(raw);
+    url.pathname = '/';
+    url.search = '';
+    url.hash = '';
+    return url;
+  }
+
+  function addMessage(event) {
+    if (event?.type === 'pixelb8_feed_status') return;
+    const wrap = document.createElement('div');
+    wrap.className = 'msg';
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const type = String(event?.type || 'event');
+    const who = event?.username || event?.name || event?.player || event?.sender || '';
+    const when = event?.timestamp ? new Date(Number(event.timestamp)).toLocaleTimeString() : new Date().toLocaleTimeString();
+    meta.innerHTML = `<span class="type"></span>${who ? ` · ${escapeHtml(who)}` : ''} · ${escapeHtml(when)}`;
+    meta.querySelector('.type').textContent = type;
+
+    const body = document.createElement('div');
+    const text = event?.message ?? event?.text ?? event?.content;
+    body.textContent = text != null ? String(text) : JSON.stringify(event);
+
+    wrap.append(meta, body);
+    feedEl.appendChild(wrap);
+    feedEl.scrollTop = feedEl.scrollHeight;
+  }
+
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  }
+
+  async function connect() {
+    const myAttempt = ++attempt;
+    if (socket) {
+      try { socket.close(); } catch (_) {}
+      socket = null;
+    }
+
+    let worker;
+    try { worker = normalizeWorker(workerInput.value); }
+    catch (err) { setStatus(err.message, 'bad'); return; }
+
+    const viewerCode = codeInput.value.trim();
+    if (!viewerCode) { setStatus('Enter the Viewer Code.', 'bad'); return; }
+
+    localStorage.setItem('pixelb8StandaloneWorkerUrl', worker.origin);
+    setStatus('Authorizing…');
+
+    try {
+      const response = await fetch(`${worker.origin}/viewer-token`, {
+        method: 'POST',
+        headers: {'content-type':'application/json'},
+        body: JSON.stringify({viewerCode})
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.token) {
+        if (data?.error === 'invalid_viewer_code') throw new Error('Invalid Viewer Code.');
+        if (data?.error === 'viewer_key_not_configured') throw new Error('Viewer access is not configured on this Worker.');
+        throw new Error(data?.error || `Authorization failed (${response.status}).`);
+      }
+      if (myAttempt !== attempt) return;
+
+      const wsProtocol = worker.protocol === 'http:' ? 'ws:' : 'wss:';
+      const wsUrl = `${wsProtocol}//${worker.host}/viewer?token=${encodeURIComponent(data.token)}`;
+      setStatus('Connecting…');
+      socket = new WebSocket(wsUrl);
+
+      socket.addEventListener('open', () => setStatus('Connected', 'ok'));
+      socket.addEventListener('message', ev => {
+        try { addMessage(JSON.parse(ev.data)); }
+        catch (_) {
+          const wrap = document.createElement('div');
+          wrap.className = 'msg';
+          wrap.textContent = String(ev.data);
+          feedEl.appendChild(wrap);
+        }
+      });
+      socket.addEventListener('close', () => {
+        if (myAttempt === attempt) setStatus('Disconnected');
+      });
+      socket.addEventListener('error', () => setStatus('WebSocket error', 'bad'));
+    } catch (err) {
+      if (myAttempt === attempt) setStatus(err?.message || 'Unable to connect.', 'bad');
+    }
+  }
+
+  connectBtn.addEventListener('click', connect);
+  disconnectBtn.addEventListener('click', () => {
+    attempt += 1;
+    if (socket) { try { socket.close(); } catch (_) {} }
+    socket = null;
+    setStatus('Disconnected');
+  });
+  showBtn.addEventListener('click', () => {
+    const show = codeInput.type === 'password';
+    codeInput.type = show ? 'text' : 'password';
+    showBtn.textContent = show ? 'Hide Code' : 'Show Code';
+  });
+})();
+</script>
+</body>
+</html>

@@ -3,35 +3,12 @@ import { DurableObject } from "cloudflare:workers";
 const MAX_MESSAGE_BYTES = 16 * 1024;
 const VIEWER_TOKEN_TTL_MS = 10 * 60 * 1000;
 const ALLOWED_EVENT_TYPES = new Set(["clan_chat", "clan_system", "test"]);
-const ALLOWED_WEB_ORIGINS = new Set([
-  "https://pixelb8.lol",
-  "https://www.pixelb8.lol",
-]);
 
 function websocketResponse(client) {
   return new Response(null, {
     status: 101,
     webSocket: client,
   });
-}
-
-function corsHeaders(request) {
-  const origin = String(request.headers.get("Origin") || "").trim();
-
-  if (
-    ALLOWED_WEB_ORIGINS.has(origin) ||
-    /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
-  ) {
-    return {
-      "access-control-allow-origin": origin,
-      "access-control-allow-methods": "POST, OPTIONS",
-      "access-control-allow-headers": "content-type",
-      "access-control-max-age": "86400",
-      vary: "Origin",
-    };
-  }
-
-  return {};
 }
 
 function jsonResponse(data, status = 200, extraHeaders = {}) {
@@ -43,6 +20,14 @@ function jsonResponse(data, status = 200, extraHeaders = {}) {
       ...extraHeaders,
     },
   });
+}
+
+function corsHeaders() {
+  return {
+    "access-control-allow-origin": "*",
+    "access-control-allow-methods": "POST, OPTIONS",
+    "access-control-allow-headers": "content-type",
+  };
 }
 
 function getPublisherKey(request) {
@@ -85,8 +70,12 @@ function base64UrlToBytes(value) {
     .replace(/-/g, "+")
     .replace(/_/g, "/");
 
-  const padding = "=".repeat((4 - (normalized.length % 4)) % 4);
-  const binary = atob(normalized + padding);
+  const padded = normalized.padEnd(
+    Math.ceil(normalized.length / 4) * 4,
+    "="
+  );
+
+  const binary = atob(padded);
   const bytes = new Uint8Array(binary.length);
 
   for (let i = 0; i < binary.length; i += 1) {
@@ -96,21 +85,10 @@ function base64UrlToBytes(value) {
   return bytes;
 }
 
-function encodeTokenPayload(payload) {
-  return bytesToBase64Url(
-    new TextEncoder().encode(JSON.stringify(payload))
-  );
-}
-
-function decodeTokenPayload(encoded) {
-  const bytes = base64UrlToBytes(encoded);
-  return JSON.parse(new TextDecoder().decode(bytes));
-}
-
 async function importViewerSigningKey(viewerKey) {
   return crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(`pixelb8-viewer-token:${viewerKey}`),
+    new TextEncoder().encode(String(viewerKey || "")),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign", "verify"]
@@ -118,18 +96,19 @@ async function importViewerSigningKey(viewerKey) {
 }
 
 async function createViewerToken(viewerKey) {
-  const now = Date.now();
   const payload = {
-    v: 1,
-    iat: now,
-    exp: now + VIEWER_TOKEN_TTL_MS,
+    exp: Date.now() + VIEWER_TOKEN_TTL_MS,
+    nonce: crypto.randomUUID(),
   };
 
-  const encodedPayload = encodeTokenPayload(payload);
-  const signingKey = await importViewerSigningKey(viewerKey);
+  const encodedPayload = bytesToBase64Url(
+    new TextEncoder().encode(JSON.stringify(payload))
+  );
+
+  const key = await importViewerSigningKey(viewerKey);
   const signature = await crypto.subtle.sign(
     "HMAC",
-    signingKey,
+    key,
     new TextEncoder().encode(encodedPayload)
   );
 
@@ -146,28 +125,25 @@ async function verifyViewerToken(token, viewerKey) {
 
   let payload;
   let signature;
+
   try {
-    payload = decodeTokenPayload(encodedPayload);
+    payload = JSON.parse(
+      new TextDecoder().decode(base64UrlToBytes(encodedPayload))
+    );
     signature = base64UrlToBytes(encodedSignature);
   } catch (_) {
     return false;
   }
 
-  if (
-    !payload ||
-    payload.v !== 1 ||
-    typeof payload.exp !== "number" ||
-    typeof payload.iat !== "number" ||
-    payload.exp <= Date.now() ||
-    payload.exp - payload.iat > VIEWER_TOKEN_TTL_MS + 5000
-  ) {
+  if (!payload || !Number.isFinite(payload.exp) || payload.exp <= Date.now()) {
     return false;
   }
 
-  const signingKey = await importViewerSigningKey(viewerKey);
+  const key = await importViewerSigningKey(viewerKey);
+
   return crypto.subtle.verify(
     "HMAC",
-    signingKey,
+    key,
     signature,
     new TextEncoder().encode(encodedPayload)
   );
@@ -206,20 +182,6 @@ export class ClanFeedRoom extends DurableObject {
 
       if (!suppliedKey || !safeEqual(configuredKey, suppliedKey)) {
         return jsonResponse({ ok: false, error: "invalid_publisher_key" }, 401);
-      }
-    } else {
-      const configuredViewerKey = String(this.env.CLAN_VIEWER_KEY || "").trim();
-      const token = String(url.searchParams.get("token") || "").trim();
-
-      if (!configuredViewerKey) {
-        return jsonResponse(
-          { ok: false, error: "viewer_key_not_configured" },
-          503
-        );
-      }
-
-      if (!token || !(await verifyViewerToken(token, configuredViewerKey))) {
-        return jsonResponse({ ok: false, error: "invalid_viewer_token" }, 401);
       }
     }
 
@@ -323,12 +285,11 @@ export class ClanFeedRoom extends DurableObject {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const cors = corsHeaders(request);
 
     if (request.method === "OPTIONS" && url.pathname === "/viewer-token") {
       return new Response(null, {
         status: 204,
-        headers: cors,
+        headers: corsHeaders(),
       });
     }
 
@@ -338,10 +299,8 @@ export default {
         ok: true,
         service: "PixelB8 Clan Feed Relay",
         viewerUrl: `${wsBase}/viewer`,
-        viewerTokenUrl: `${url.origin}/viewer-token`,
         runeliteUrl: `${wsBase}/runelite`,
-        viewerAuthentication: "required",
-        viewerTokenTtlSeconds: Math.floor(VIEWER_TOKEN_TTL_MS / 1000),
+        viewerAuth: "viewer-code-token",
         persistence: "none",
       });
     }
@@ -351,16 +310,17 @@ export default {
         return jsonResponse(
           { ok: false, error: "method_not_allowed" },
           405,
-          cors
+          corsHeaders()
         );
       }
 
       const configuredViewerKey = String(env.CLAN_VIEWER_KEY || "").trim();
+
       if (!configuredViewerKey) {
         return jsonResponse(
           { ok: false, error: "viewer_key_not_configured" },
           503,
-          cors
+          corsHeaders()
         );
       }
 
@@ -371,35 +331,52 @@ export default {
         return jsonResponse(
           { ok: false, error: "invalid_json" },
           400,
-          cors
+          corsHeaders()
         );
       }
 
-      const suppliedViewerCode = String(body?.viewerCode || "").trim();
-      if (
-        !suppliedViewerCode ||
-        !safeEqual(configuredViewerKey, suppliedViewerCode)
-      ) {
+      const viewerCode = String(body?.viewerCode || "").trim();
+
+      if (!viewerCode || !safeEqual(configuredViewerKey, viewerCode)) {
         return jsonResponse(
           { ok: false, error: "invalid_viewer_code" },
           401,
-          cors
+          corsHeaders()
         );
       }
 
       const token = await createViewerToken(configuredViewerKey);
+
       return jsonResponse(
         {
           ok: true,
           token,
-          expiresInSeconds: Math.floor(VIEWER_TOKEN_TTL_MS / 1000),
+          expiresInMs: VIEWER_TOKEN_TTL_MS,
         },
         200,
-        cors
+        corsHeaders()
       );
     }
 
-    if (url.pathname !== "/viewer" && url.pathname !== "/runelite") {
+    if (url.pathname === "/viewer") {
+      const configuredViewerKey = String(env.CLAN_VIEWER_KEY || "").trim();
+
+      if (!configuredViewerKey) {
+        return jsonResponse(
+          { ok: false, error: "viewer_key_not_configured" },
+          503
+        );
+      }
+
+      const token = String(url.searchParams.get("token") || "").trim();
+      const valid = token
+        ? await verifyViewerToken(token, configuredViewerKey)
+        : false;
+
+      if (!valid) {
+        return jsonResponse({ ok: false, error: "invalid_viewer_token" }, 401);
+      }
+    } else if (url.pathname !== "/runelite") {
       return jsonResponse({ ok: false, error: "not_found" }, 404);
     }
 

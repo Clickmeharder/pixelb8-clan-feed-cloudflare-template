@@ -6,16 +6,13 @@ Each deployment belongs to one clan and runs in that clan owner's own Cloudflare
 
 ## Deploy
 
-Once this repository is public on GitHub, this button can be used by clan owners:
+Clan owners can deploy this template to their own Cloudflare account:
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=REPLACE_WITH_PUBLIC_GITHUB_REPO_URL)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Clickmeharder/pixelb8-clan-feed-cloudflare-template)
 
-During deployment, set:
+During deployment, Cloudflare will ask for `CLAN_FEED_KEY`.
 
-- `CLAN_FEED_KEY` to one of the clan keys generated in your PixelB8 Clan Owner Office. RuneLite uses this to publish the feed.
-- `CLAN_VIEWER_KEY` to the Clan Feed Viewer Code generated in your PixelB8 Clan Owner Office. Clanmates use this for read-only access.
-
-Keep both values private.
+Paste one of the clan keys generated in your PixelB8 Clan Owner Office. Keep this value private. RuneLite must use the same key when publishing the Clan Feed.
 
 ## After deployment
 
@@ -25,8 +22,6 @@ Open the deployed Worker URL in a browser. It returns the two URLs you need:
 - `runeliteUrl` — put this in RuneLite's **Clan Feed WebSocket URL** setting.
 
 RuneLite's **Clan Feed Key** must be the same key you entered as `CLAN_FEED_KEY` during deployment.
-
-The PixelB8 website asks clan members for the Viewer Code, exchanges it for a short-lived viewer token, then connects to the saved `viewerUrl`.
 
 Example:
 
@@ -40,7 +35,7 @@ wss://your-worker.workers.dev/runelite
 
 ## What it relays
 
-The relay accepts authenticated RuneLite publisher connections and forwards these PixelB8 event types to authenticated website viewers:
+The relay accepts authenticated RuneLite publisher connections and forwards these PixelB8 event types to connected website viewers:
 
 - `clan_chat`
 - `clan_system`
@@ -54,8 +49,6 @@ This template does not write clan-feed messages to Durable Object storage. Messa
 
 The Durable Object uses Cloudflare's Hibernation WebSocket API so idle WebSocket rooms can sleep while connections remain open.
 
-The saved viewer WebSocket URL alone is not enough to read the feed. A valid short-lived viewer token is required, and that token is issued only after the correct `CLAN_VIEWER_KEY` is supplied.
-
 ## Local development
 
 ```bash
@@ -64,4 +57,4 @@ cp .dev.vars.example .dev.vars
 npm run dev
 ```
 
-Then edit `.dev.vars` and add a real clan key and Viewer Code.
+Then edit `.dev.vars` and replace the placeholder with a real clan key.

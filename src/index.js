@@ -25,6 +25,7 @@ function jsonResponse(data, status = 200, extraHeaders = {}) {
 function corsHeaders(request) {
   const origin = String(request.headers.get("Origin") || "").trim();
   const allowed =
+    origin === "null" ||
     origin === "https://pixelb8.lol" ||
     origin === "https://www.pixelb8.lol" ||
     origin.startsWith("http://localhost:") ||

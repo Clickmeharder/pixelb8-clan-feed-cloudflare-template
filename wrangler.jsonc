@@ -3,6 +3,14 @@
   "name": "yourclanname-feed-cloudflare-setup",
   "main": "src/index.js",
   "compatibility_date": "2026-09-28",
+
+  "secrets": {
+    "required": [
+      "CLAN_FEED_KEY",
+      "CLAN_VIEWER_KEY"
+    ]
+  },
+
   "durable_objects": {
     "bindings": [
       {
@@ -11,6 +19,7 @@
       }
     ]
   },
+
   "exports": {
     "ClanFeedRoom": {
       "type": "durable-object",

@@ -1,11 +1,11 @@
-# Required RuneLite publisher secret.
+# Required publisher secret.
 # During Cloudflare deployment, paste one of the clan keys generated
 # in your PixelB8 Clan Owner Office into the CLAN_FEED_KEY secret field.
+# Do not put a real clan key in this file or commit one to GitHub.
 CLAN_FEED_KEY=
 
-# Required website viewer secret.
-# Paste the Clan Feed Viewer Code generated in your PixelB8 Clan Owner Office
-# into the CLAN_VIEWER_KEY secret field. Clanmates use this code for read-only access.
+# Required viewer secret.
+# During Cloudflare deployment, paste the Clan Feed Viewer Code generated
+# in your PixelB8 Clan Owner Office into the CLAN_VIEWER_KEY secret field.
+# Do not put a real viewer code in this file or commit one to GitHub.
 CLAN_VIEWER_KEY=
-
-# Never put real secrets in this example file or commit a real .dev.vars file.

@@ -31,7 +31,7 @@ A browser viewer submits the Viewer Code to `POST /viewer-token`. If it matches 
 
 ## Optional standalone viewer
 
-This template includes a standalone read-only Clan Feed Viewer in `docs/index.html`. Hosting the viewer is optional. It connects directly to the clan owner's Cloudflare Worker and does not require PixelB8 or Firebase.
+This template includes a standalone read-only Clan Feed Viewer in `docs/index.html`. Hosting the viewer is optional. It connects directly to the clan owner's Cloudflare Worker.
 
 To publish your own viewer with GitHub Pages:
 
